@@ -1,5 +1,5 @@
 // Filtro José Ravi - 1 Aninho 🎉
-const API_URL = "https://video-converter-api-production-bb8e.up.railway.app/convert";
+const API_URL = "https://api-video-filtro-production.up.railway.app/convert";
 
 const video = document.getElementById('video');
 const overlay = document.getElementById('overlay');
@@ -26,24 +26,19 @@ const loadingMessage = document.getElementById('loading-message');
 
 let usingFrontCamera = true;
 let stream;
-
 let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
 let recordStartTime = 0;
 let recordTimerInterval = null;
+let frameInterval = null;
 let recordedMimeType = 'video/webm';
 let lastVideoUrl = null;
 
 const isiOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-function showLoading() {
-  loadingMessage.style.display = 'block';
-}
-
-function hideLoading() {
-  loadingMessage.style.display = 'none';
-}
+function showLoading() { loadingMessage.style.display = 'block'; }
+function hideLoading() { loadingMessage.style.display = 'none'; }
 
 function setButtonsDisabledDuringProcess(disabled) {
   switchCameraBtn.disabled = disabled;
@@ -53,17 +48,10 @@ function setButtonsDisabledDuringProcess(disabled) {
 }
 
 async function startCamera() {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-  }
-
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
   if (stream) stream.getTracks().forEach(track => track.stop());
   const constraints = {
-    video: {
-      facingMode: usingFrontCamera ? 'user' : 'environment',
-      width: { ideal: 1920 },
-      height: { ideal: 1080 }
-    },
+    video: { facingMode: usingFrontCamera ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
     audio: true
   };
   stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -72,31 +60,21 @@ async function startCamera() {
   overlay.style.transform = 'scaleX(1)';
 }
 
-switchCameraBtn.onclick = () => {
-  usingFrontCamera = !usingFrontCamera;
-  startCamera();
-};
+switchCameraBtn.onclick = () => { usingFrontCamera = !usingFrontCamera; startCamera(); };
 
 // FOTO
 captureBtn.onclick = () => {
   if (!stream) return;
   const track = stream.getVideoTracks()[0];
-  const settings = track.getSettings();
-  const width = settings.width;
-  const height = settings.height;
-
+  const { width, height } = track.getSettings();
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
-  if (usingFrontCamera) {
-    ctx.translate(width, 0);
-    ctx.scale(-1, 1);
-  }
+  if (usingFrontCamera) { ctx.translate(width, 0); ctx.scale(-1, 1); }
   ctx.drawImage(video, 0, 0, width, height);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(overlay, 0, 0, width, height);
-  const dataUrl = canvas.toDataURL('image/png');
-  photoPreview.src = dataUrl;
+  photoPreview.src = canvas.toDataURL('image/png');
   previewContainer.style.display = 'flex';
 };
 
@@ -105,55 +83,42 @@ saveBtn.onclick = () => {
   link.download = 'foto-joseravi.png';
   link.href = photoPreview.src;
   link.click();
-  if (isiOS) {
-    instructions.style.display = 'block';
-  }
+  if (isiOS) instructions.style.display = 'block';
 };
 
-retryBtn.onclick = () => {
-  previewContainer.style.display = 'none';
-  instructions.style.display = 'none';
-};
+retryBtn.onclick = () => { previewContainer.style.display = 'none'; instructions.style.display = 'none'; };
 
+// TIMER
 function startRecordingTimer() {
   recordStartTime = Date.now();
   recordingIndicator.style.display = 'block';
   recordingIndicator.textContent = '🔴 REC 00:00';
-
   recordTimerInterval = setInterval(() => {
-    const elapsedMs = Date.now() - recordStartTime;
-    const totalSeconds = Math.floor(elapsedMs / 1000);
-    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
-    const seconds = String(totalSeconds % 60).padStart(2, '0');
-    recordingIndicator.textContent = `🔴 REC ${minutes}:${seconds}`;
+    const total = Math.floor((Date.now() - recordStartTime) / 1000);
+    const m = String(Math.floor(total / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    recordingIndicator.textContent = `🔴 REC ${m}:${s}`;
   }, 500);
 }
 
 function stopRecordingTimer() {
-  if (recordTimerInterval) {
-    clearInterval(recordTimerInterval);
-    recordTimerInterval = null;
-  }
+  if (recordTimerInterval) { clearInterval(recordTimerInterval); recordTimerInterval = null; }
   recordingIndicator.style.display = 'none';
 }
 
+// VÍDEO
 function startVideoRecording() {
   if (!stream) return;
 
   const track = stream.getVideoTracks()[0];
   const settings = track.getSettings();
-  const camWidth = settings.width || 1920;
-  const camHeight = settings.height || 1080;
+  const camWidth = settings.width || 1280;
+  const camHeight = settings.height || 720;
+  const targetWidth = 360;
+  const targetHeight = Math.round(camHeight * (targetWidth / camWidth));
 
-  const targetWidth = 640;
-  const ratio = targetWidth / camWidth;
-  const targetHeight = Math.round(camHeight * ratio);
-
-  const width = targetWidth;
-  const height = targetHeight;
-
-  recordingCanvas.width = width;
-  recordingCanvas.height = height;
+  recordingCanvas.width = targetWidth;
+  recordingCanvas.height = targetHeight;
   const rctx = recordingCanvas.getContext('2d');
 
   isRecording = true;
@@ -161,80 +126,52 @@ function startVideoRecording() {
   videoPreviewContainer.style.display = 'none';
   videoInstructions.style.display = 'none';
 
-  function drawFrame() {
-    if (!isRecording) return;
-
-    rctx.clearRect(0, 0, width, height);
-
+  frameInterval = setInterval(() => {
+    if (!isRecording) { clearInterval(frameInterval); return; }
+    rctx.clearRect(0, 0, targetWidth, targetHeight);
     if (usingFrontCamera) {
-      rctx.save();
-      rctx.translate(width, 0);
-      rctx.scale(-1, 1);
-      rctx.drawImage(video, 0, 0, width, height);
+      rctx.save(); rctx.translate(targetWidth, 0); rctx.scale(-1, 1);
+      rctx.drawImage(video, 0, 0, targetWidth, targetHeight);
       rctx.restore();
     } else {
-      rctx.drawImage(video, 0, 0, width, height);
+      rctx.drawImage(video, 0, 0, targetWidth, targetHeight);
     }
+    rctx.drawImage(overlay, 0, 0, targetWidth, targetHeight);
+  }, 1000 / 15);
 
-    rctx.drawImage(overlay, 0, 0, width, height);
-
-    requestAnimationFrame(drawFrame);
-  }
-  drawFrame();
-
-  const baseFps = 24;
-  const videoStream = recordingCanvas.captureStream(baseFps);
+  const videoStream = recordingCanvas.captureStream(15);
   const combinedStream = new MediaStream();
-
   videoStream.getVideoTracks().forEach(t => combinedStream.addTrack(t));
-
   const audioTracks = stream.getAudioTracks();
-  if (audioTracks.length > 0) {
-    combinedStream.addTrack(audioTracks[0]);
-  }
+  if (audioTracks.length > 0) combinedStream.addTrack(audioTracks[0]);
 
-  let options = {};
-  recordedMimeType = 'video/webm';
+  const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+  let mimeType = '';
+  for (const t of types) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) { mimeType = t; break; }
+  }
+  recordedMimeType = mimeType.includes('mp4') ? 'video/mp4' : 'video/webm';
 
   try {
-    if (isiOS) {
-      options.mimeType = 'video/mp4';
-      recordedMimeType = 'video/mp4';
-    } else {
-      if (typeof MediaRecorder !== 'undefined') {
-        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-          options.mimeType = 'video/webm;codecs=vp9,opus';
-          recordedMimeType = 'video/webm';
-        } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-          options.mimeType = 'video/webm;codecs=vp8,opus';
-          recordedMimeType = 'video/webm';
-        }
-      }
-    }
-
-    mediaRecorder = new MediaRecorder(combinedStream, options);
+    mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
   } catch (e) {
-    console.error('Erro ao iniciar MediaRecorder:', e);
-    alert('Este navegador não suporta gravação de vídeo com som nesta moldura. As fotos vão funcionar normalmente. 🥹');
+    alert('Este navegador não suporta gravação de vídeo. As fotos funcionam normalmente. 🥹');
     isRecording = false;
-    stopRecordingTimer();
     startRecordBtn.style.display = 'inline-block';
     stopRecordBtn.style.display = 'none';
     return;
   }
 
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data && event.data.size > 0) {
-      recordedChunks.push(event.data);
-    }
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
   };
 
   mediaRecorder.onstop = async () => {
     isRecording = false;
+    if (frameInterval) { clearInterval(frameInterval); frameInterval = null; }
     stopRecordingTimer();
 
     const blob = new Blob(recordedChunks, { type: recordedMimeType });
-
     if (!blob || blob.size === 0) {
       alert('Nenhum dado de vídeo foi gravado.');
       startRecordBtn.style.display = 'inline-block';
@@ -248,20 +185,11 @@ function startVideoRecording() {
     try {
       const formData = new FormData();
       formData.append('video', blob, 'video.webm');
-
       const device = isiOS ? 'ios' : 'android';
 
-      const resposta = await fetch(`${API_URL}?device=${device}`, {
-        method: 'POST',
-        body: formData
-      });
+      const resposta = await fetch(`${API_URL}?device=${device}`, { method: 'POST', body: formData });
 
       if (!resposta.ok) {
-        let erroTxt = '';
-        try {
-          erroTxt = await resposta.text();
-        } catch (e) {}
-        console.error('Erro na conversão no servidor:', erroTxt);
         alert('Ocorreu um erro ao converter o vídeo. Tente novamente.');
       } else {
         const mp4Blob = await resposta.blob();
@@ -274,9 +202,7 @@ function startVideoRecording() {
         a.download = 'video-joseravi.mp4';
         document.body.appendChild(a);
         a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-        }, 1000);
+        setTimeout(() => document.body.removeChild(a), 1000);
 
         if (isiOS) {
           videoPreviewContainer.style.display = 'flex';
@@ -286,11 +212,10 @@ function startVideoRecording() {
         } else {
           videoPreviewContainer.style.display = 'none';
         }
-
         URL.revokeObjectURL(url);
       }
     } catch (err) {
-      console.error('Erro ao enviar vídeo para o servidor:', err);
+      console.error('Erro:', err);
       alert('Erro ao enviar o vídeo para o servidor.');
     } finally {
       hideLoading();
@@ -302,38 +227,21 @@ function startVideoRecording() {
 
   startRecordingTimer();
   mediaRecorder.start(100);
-
   startRecordBtn.style.display = 'none';
   stopRecordBtn.style.display = 'inline-block';
 }
 
-startRecordBtn.onclick = () => {
-  if (isRecording) return;
-  startVideoRecording();
-};
-
-stopRecordBtn.onclick = () => {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-  }
-};
+startRecordBtn.onclick = () => { if (!isRecording) startVideoRecording(); };
+stopRecordBtn.onclick = () => { if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop(); };
 
 saveVideoBtn.onclick = () => {
   if (!lastVideoUrl) return;
-  const a = document.createElement('a');
-  a.style.display = 'none';
-  a.href = lastVideoUrl;
   const ext = recordedMimeType.includes('mp4') ? 'mp4' : 'webm';
-  a.download = 'video-joseravi.' + ext;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-  }, 1000);
-
-  if (isiOS) {
-    videoInstructions.style.display = 'block';
-  }
+  const a = document.createElement('a');
+  a.style.display = 'none'; a.href = lastVideoUrl; a.download = 'video-joseravi.' + ext;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => document.body.removeChild(a), 1000);
+  if (isiOS) videoInstructions.style.display = 'block';
 };
 
 startCamera();
