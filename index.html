@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Filtro José Ravi</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        #camera {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            object-fit: cover; z-index: 1; transform: scaleX(-1);
+        }
+        #moldura {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            /* Ajustado para não cortar as bordas da sua arte */
+            width: 100%; height: 100%; z-index: 2; pointer-events: none;
+        }
+        /* Estilo dos botões parecidos com o do Instagram */
+        .controles {
+            position: absolute; bottom: 40px; left: 0; width: 100%;
+            display: flex; justify-content: center; align-items: center; gap: 40px; z-index: 10;
+        }
+        .btn {
+            background: rgba(255, 255, 255, 0.9); border: 3px solid #ccc; border-radius: 50%;
+            width: 75px; height: 75px; font-size: 35px; cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+        }
+        .btn-menor {
+            width: 55px; height: 55px; font-size: 25px; border: 2px solid #ccc;
+        }
+        .btn:active { background: #ddd; transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <video id="camera" autoplay playsinline></video>
+    
+    <img id="moldura" src="moldura.png" alt="Filtro">
+
+    <div class="controles">
+        <button class="btn btn-menor" id="btn-virar" title="Virar Câmera">🔄</button>
+        <button class="btn" id="btn-foto" title="Tirar Foto">📸</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('camera');
+        let isFrontCamera = true;
+        let currentStream = null;
+
+        // Função para ligar a câmera certa
+        function iniciarCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            const mode = isFrontCamera ? 'user' : 'environment';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: mode } })
+            .then(function(stream) {
+                currentStream = stream;
+                video.srcObject = stream;
+                // Aplica o efeito espelho só na câmera frontal
+                video.style.transform = isFrontCamera ? 'scaleX(-1)' : 'scaleX(1)';
+            })
+            .catch(function(err) {
+                console.error("Erro ao acessar a câmera: ", err);
+            });
+        }
+
+        // Botão de virar a câmera
+        document.getElementById('btn-virar').addEventListener('click', () => {
+            isFrontCamera = !isFrontCamera;
+            iniciarCamera();
+        });
+
+        // Botão de tirar a foto
+        document.getElementById('btn-foto').addEventListener('click', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+
+            // Desenha a câmera
+            if (isFrontCamera) {
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+            }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Tira o efeito espelho para desenhar a moldura certa
+            if (isFrontCamera) {
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+            }
+
+            // Desenha a moldura por cima
+            const img = document.getElementById('moldura');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // Cria o link para baixar a foto no celular
+            const link = document.createElement('a');
+            link.download = 'foto-joseravi.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+
+        // Liga a câmera quando a página abre
+        iniciarCamera();
+    </script>
+</body>
+</html>
